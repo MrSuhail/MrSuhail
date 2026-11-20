@@ -10,8 +10,14 @@ if (config.adminApiKey === 'change-me') {
   console.warn('WARNING: ADMIN_API_KEY is not set; using the insecure default "change-me"');
 }
 
-const server = createApp(db).listen(config.port, () => {
+const app = createApp(db);
+const { whatsapp } = app.locals;
+if (whatsapp.enabled) console.log('WhatsApp ordering is on (webhook: /webhooks/whatsapp)');
+else console.log(`WhatsApp ordering is off. To turn it on, set: ${whatsapp.missing.join(', ')}`);
+
+const server = app.listen(config.port, () => {
   console.log(`Restaurant API listening on http://localhost:${config.port}`);
+  console.log(`Staff page: http://localhost:${config.port}/staff`);
 });
 
 const shutdown = () => server.close(() => { db.close(); process.exit(0); });

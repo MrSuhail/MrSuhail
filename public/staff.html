@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Store Staff</title>
+<style>
+  :root {
+    --bg: #f4f6f4; --panel: #ffffff; --text: #1d2420; --muted: #66706a; --line: #dfe5e1;
+    --brand: #1f7a4d; --brand-ink: #ffffff; --warn: #b5530d; --danger: #b42318; --soft: #e8f3ed; --bubble-in: #ffffff; --bubble-out: #dcf3e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121614; --panel: #1b201d; --text: #e6ebe8; --muted: #9aa49e; --line: #2c3430; --brand: #3fa772; --brand-ink: #0c140f;
+      --warn: #f0a050; --danger: #f07a70; --soft: #20302a; --bubble-in: #232a26; --bubble-out: #1f3a2c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0; flex: 1; min-width: 140px; }
+  nav { display: flex; gap: 6px; }
+  nav button { position: relative; }
+  .badge { background: var(--danger); color: #fff; border-radius: 10px; padding: 0 6px; font-size: 12px; margin-left: 4px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+  button.primary { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); font-weight: 600; }
+  button.danger { color: var(--danger); }
+  button.active { background: var(--soft); border-color: var(--brand); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  input, textarea { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; }
+  main { padding: 16px; max-width: 1400px; margin: 0 auto; }
+  .muted { color: var(--muted); }
+  .notice { background: var(--soft); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+  .error { color: var(--danger); }
+
+  /* Orders board */
+  .board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 1000px) { .board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 600px) { .board { grid-template-columns: 1fr; } }
+  .col h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+  .card.new { border-color: var(--warn); box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 30%, transparent); }
+  .card .top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .code { font-weight: 700; font-size: 16px; letter-spacing: .03em; }
+  .tag { font-size: 12px; border-radius: 6px; padding: 1px 6px; background: var(--soft); }
+  .when { font-weight: 600; color: var(--warn); }
+  .items { margin: 8px 0; padding-left: 18px; }
+  .items li { margin-bottom: 3px; }
+  .opts { color: var(--muted); font-size: 13px; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  /* Chats */
+  .chats { display: grid; grid-template-columns: 300px 1fr; gap: 12px; height: calc(100vh - 110px); }
+  @media (max-width: 760px) { .chats { grid-template-columns: 1fr; height: calc(100dvh - 150px); } .chats.open .list { display: none; } .chats:not(.open) .thread { display: none; } }
+  .list, .thread { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; min-height: 300px; }
+  .list { overflow-y: auto; }
+  .chat-row { padding: 10px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .chat-row.sel { background: var(--soft); }
+  .chat-row .name { font-weight: 600; display: flex; justify-content: space-between; gap: 6px; }
+  .chat-row .preview { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .thread-head { padding: 10px 12px; border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .thread-head .who { flex: 1; font-weight: 600; min-width: 120px; }
+  .msgs { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 6px; min-height: 240px; }
+  .msg { align-self: flex-start; max-width: 80%; padding: 7px 10px; border-radius: 10px; white-space: pre-wrap; word-wrap: break-word; border: 1px solid var(--line); background: var(--bubble-in); }
+  .msg.out { align-self: flex-end; background: var(--bubble-out); }
+  .msg .meta { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .mobile-back { display: none; }
+  @media (max-width: 760px) { .mobile-back { display: inline-block; } }
+  .compose { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
+  .compose textarea { resize: none; height: 44px; }
+
+  /* Menu */
+  .menu-cat { margin-bottom: 18px; }
+  .menu-cat h2 { font-size: 16px; margin: 0 0 8px; }
+  .menu-item { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+  .menu-item .row { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+  .soldout { text-decoration: line-through; color: var(--muted); }
+  .opt-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { font-size: 13px; padding: 3px 9px; border-radius: 14px; }
+  .chip.off { text-decoration: line-through; color: var(--muted); }
+
+  .login { max-width: 360px; margin: 12vh auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 22px; }
+  .login h1 { margin-top: 0; font-size: 20px; }
+  .login button { margin-top: 10px; width: 100%; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+(() => {
+  const $app = document.getElementById('app');
+  const store = {
+    get(k) { try { return sessionStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { sessionStorage.setItem(k, v); } catch {} },
+    del(k) { try { sessionStorage.removeItem(k); } catch {} },
+  };
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+  let key = store.get('adminKey');
+  let info = { store_name: 'Store', currency_symbol: '', timezone: undefined, enabled: false };
+  let tab = store.get('tab') || 'orders';
+  let selectedChat = null;
+  let seenPending = null;
+  let timers = [];
+
+  const money = (c) => `${info.currency_symbol}${(c / 100).toFixed(2)}`;
+  const fmtTime = (iso) => {
+    const d = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
+    const opts = { timeZone: info.timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+    const today = new Date().toLocaleDateString('en-ZA', { timeZone: info.timezone });
+    const day = d.toLocaleDateString('en-ZA', { timeZone: info.timezone });
+    return day === today ? d.toLocaleTimeString('en-ZA', opts)
+      : d.toLocaleString('en-ZA', { ...opts, weekday: 'short', day: 'numeric', month: 'short' });
+  };
+
+  async function api(method, path, body) {
+    const res = await fetch(path, { method, headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` }, body: body ? JSON.stringify(body) : undefined });
+    if (res.status === 401) { logout('That key was not accepted.'); throw new Error('unauthorized'); }
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : null;
+    if (!res.ok) throw new Error(data?.error || `Error ${res.status}`);
+    return data;
+  }
+
+  function beep() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.25].forEach((t) => {
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
+        g.gain.setValueAtTime(0.2, ctx.currentTime + t); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.2);
+        o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.2);
+      });
+    } catch {}
+  }
+
+  // ---------- login ----------
+  function logout(msg) {
+    key = null; store.del('adminKey'); timers.forEach(clearInterval); timers = [];
+    $app.innerHTML = `<form class="login" id="login">
+      <h1>Staff sign in</h1>
+      <p class="muted">Enter the admin key (ADMIN_API_KEY).</p>
+      ${msg ? `<p class="error">${esc(msg)}</p>` : ''}
+      <input type="password" id="key" autocomplete="current-password" placeholder="Admin key" required>
+      <button class="primary">Sign in</button>
+    </form>`;
+    document.getElementById('login').onsubmit = (e) => { e.preventDefault(); key = document.getElementById('key').value.trim(); store.set('adminKey', key); start(); };
+  }
+
+  async function start() {
+    try { info = await api('GET', '/api/admin/whatsapp/status'); } catch (e) { if (e.message !== 'unauthorized') logout(e.message); return; }
+    document.title = `${info.store_name} · Staff`;
+    $app.innerHTML = `<header>
+        <h1>${esc(info.store_name)}</h1>
+        <nav>
+          <button data-tab="orders">Orders <span id="b-orders"></span></button>
+          <button data-tab="chats">WhatsApp <span id="b-chats"></span></button>
+          <button data-tab="menu">Sold out</button>
+        </nav>
+        <button id="logout" title="Sign out">Sign out</button>
+      </header><main id="main"></main>`;
+    document.querySelectorAll('nav button').forEach((b) => (b.onclick = () => show(b.dataset.tab)));
+    document.getElementById('logout').onclick = () => logout();
+    timers.push(setInterval(refreshOrders, 5000), setInterval(refreshChats, 4000));
+    show(tab);
+  }
+
+  function show(t) {
+    tab = t; store.set('tab', t);
+    document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.tab === t));
+    const main = document.getElementById('main');
+    if (t === 'orders') { main.innerHTML = '<div id="orders"></div>'; refreshOrders(); }
+    if (t === 'chats') { main.innerHTML = '<div id="chats"></div>'; renderChatShell(); refreshChats(); }
+    if (t === 'menu') { main.innerHTML = '<div id="menu"></div>'; renderMenu(); }
+  }
+
+  // ---------- orders ----------
+  const COLUMNS = [
+    ['pending', 'New', [['confirmed', 'Accept', 'primary'], ['cancelled', 'Reject', 'danger']]],
+    ['confirmed', 'Accepted', [['preparing', 'Start making', 'primary'], ['cancelled', 'Cancel', 'danger']]],
+    ['preparing', 'Making', [['ready', 'Ready', 'primary'], ['cancelled', 'Cancel', 'danger']]],
+    ['ready', 'Ready for collection', [['completed', 'Collected', 'primary']]],
+  ];
+
+  async function refreshOrders() {
+    let data;
+    try { data = (await api('GET', '/api/admin/orders?status=pending,confirmed,preparing,ready&limit=200')).data; } catch { return; }
+    const pending = data.filter((o) => o.status === 'pending').map((o) => o.id);
+    if (seenPending && pending.some((id) => !seenPending.includes(id))) beep();
+    seenPending = pending;
+    document.getElementById('b-orders').innerHTML = pending.length ? `<span class="badge">${pending.length}</span>` : '';
+    const el = document.getElementById('orders');
+    if (!el) return;
+    const due = (o) => (o.scheduled_for ? Date.parse(o.scheduled_for) : Date.parse(o.created_at.replace(' ', 'T') + 'Z'));
+    el.innerHTML = `${info.enabled ? '' : `<div class="notice">WhatsApp ordering is off. Missing settings: ${esc(info.missing_settings.join(', '))}</div>`}
+      <div class="board">${COLUMNS.map(([status, title, actions]) => {
+        const list = data.filter((o) => o.status === status).sort((a, b) => due(a) - due(b));
+        return `<section class="col"><h2>${title} (${list.length})</h2>${list.map((o) => orderCard(o, actions)).join('') || '<p class="muted">None</p>'}</section>`;
+      }).join('')}</div>`;
+    el.querySelectorAll('[data-order]').forEach((b) => (b.onclick = async () => {
+      if (b.dataset.status === 'cancelled' && !confirm('Cancel this order? The customer will be told.')) return;
+      b.disabled = true;
+      try { await api('PATCH', `/api/admin/orders/${b.dataset.order}/status`, { status: b.dataset.status }); } catch (e) { alert(e.message); }
+      refreshOrders();
+    }));
+    el.querySelectorAll('[data-chat]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); selectedChat = a.dataset.chat; show('chats'); }));
+  }
+
+  function orderCard(o, actions) {
+    const phone = o.customer_phone.replace(/^\+/, '');
+    return `<div class="card ${o.status === 'pending' ? 'new' : ''}">
+      <div class="top"><span class="code">${esc(o.code)}</span><span class="tag">${o.source === 'whatsapp' ? 'WhatsApp' : 'Online'}</span></div>
+      <div><strong>${esc(o.customer_name)}</strong> · ${o.source === 'whatsapp' ? `<a href="#" data-chat="${esc(phone)}">${esc(o.customer_phone)}</a>` : esc(o.customer_phone)}</div>
+      <div class="when">${o.scheduled_for ? `Collect ${fmtTime(o.scheduled_for)}` : `ASAP · ordered ${fmtTime(o.created_at)}`}</div>
+      <ul class="items">${o.items.map((l) => `<li>${l.quantity}× ${esc(l.name)}${l.options.length ? `<div class="opts">${l.options.map((x) => esc(x.name)).join(', ')}</div>` : ''}${l.notes ? `<div class="opts">Note: ${esc(l.notes)}</div>` : ''}</li>`).join('')}</ul>
+      ${o.notes ? `<p class="opts">Note: ${esc(o.notes)}</p>` : ''}
+      <div class="top"><strong>${money(o.total_cents)}</strong></div>
+      <div class="actions" style="margin-top:8px">${actions.map(([s, label, cls]) => `<button class="${cls}" data-order="${o.id}" data-status="${s}">${label}</button>`).join('')}</div>
+    </div>`;
+  }
+
+  // ---------- chats ----------
+  let lastMsgId = 0;
+  let chatList = [];
+
+  function renderChatShell() {
+    document.getElementById('chats').innerHTML = `
+      ${info.enabled ? '' : `<div class="notice">WhatsApp is not connected yet. Missing settings: ${esc(info.missing_settings.join(', '))}</div>`}
+      <div class="chats" id="chatgrid"><div class="list" id="chatlist"></div><div class="thread" id="thread"><p class="muted" style="padding:12px">Choose a chat.</p></div></div>`;
+    if (selectedChat) openChat(selectedChat);
+  }
+
+  async function refreshChats() {
+    try { chatList = (await api('GET', '/api/admin/whatsapp/chats')).data; } catch { return; }
+    const waiting = chatList.filter((c) => c.needs_staff).length;
+    document.getElementById('b-chats').innerHTML = waiting ? `<span class="badge">${waiting}</span>` : '';
+    const list = document.getElementById('chatlist');
+    if (!list) return;
+    list.innerHTML = chatList.map((c) => `<div class="chat-row ${c.phone === selectedChat ? 'sel' : ''}" data-phone="${esc(c.phone)}">
+        <div class="name"><span>${esc(c.customer_name || c.profile_name || '+' + c.phone)}</span>${c.needs_staff ? '<span class="badge">needs reply</span>' : c.staff_handling ? '<span class="tag">staff</span>' : ''}</div>
+        <div class="preview">${esc(c.last_message || '')}</div>
+        <div class="preview">${fmtTime(c.last_message_at)}</div>
+      </div>`).join('') || '<p class="muted" style="padding:12px">No WhatsApp chats yet.</p>';
+    list.querySelectorAll('.chat-row').forEach((r) => (r.onclick = () => openChat(r.dataset.phone)));
+    if (selectedChat) loadMessages(false);
+  }
+
+  function openChat(phone) {
+    selectedChat = phone; lastMsgId = 0;
+    document.getElementById('chatgrid')?.classList.add('open');
+    document.querySelectorAll('.chat-row').forEach((r) => r.classList.toggle('sel', r.dataset.phone === phone));
+    const c = chatList.find((x) => x.phone === phone);
+    document.getElementById('thread').innerHTML = `
+      <div class="thread-head">
+        <button id="back" class="mobile-back">←</button>
+        <span class="who">${esc(c?.customer_name || c?.profile_name || '')} <span class="muted">+${esc(phone)}</span></span>
+        <button id="release" title="Let the ordering assistant answer this chat again">Hand back to bot</button>
+      </div>
+      <div class="msgs" id="msgs"></div>
+      <form class="compose" id="compose"><textarea id="reply" placeholder="Type a reply… (the bot pauses while you chat)"></textarea><button class="primary">Send</button></form>`;
+    document.getElementById('back').onclick = () => { selectedChat = null; document.getElementById('chatgrid').classList.remove('open'); };
+    document.getElementById('release').onclick = async () => { try { await api('POST', `/api/admin/whatsapp/chats/${phone}/release`); refreshChats(); } catch (e) { alert(e.message); } };
+    const reply = document.getElementById('reply');
+    reply.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.getElementById('compose').requestSubmit(); } };
+    document.getElementById('compose').onsubmit = async (e) => {
+      e.preventDefault();
+      const text = reply.value.trim();
+      if (!text) return;
+      reply.disabled = true;
+      try { await api('POST', `/api/admin/whatsapp/chats/${phone}/messages`, { text }); reply.value = ''; } catch (err) { alert(err.message); }
+      reply.disabled = false; reply.focus();
+      loadMessages(true);
+    };
+    loadMessages(true);
+  }
+
+  async function loadMessages(scroll) {
+    const phone = selectedChat;
+    let data;
+    try { data = await api('GET', `/api/admin/whatsapp/chats/${phone}/messages?after_id=${lastMsgId}`); } catch { return; }
+    const box = document.getElementById('msgs');
+    if (!box || phone !== selectedChat) return;
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    for (const m of data.messages) {
+      lastMsgId = Math.max(lastMsgId, m.id);
+      const div = document.createElement('div');
+      div.className = `msg ${m.direction}`;
+      div.innerHTML = `${esc(m.body)}<div class="meta">${m.author} · ${fmtTime(m.created_at)}${m.error ? ` · <span class="error">not delivered</span>` : ''}</div>`;
+      box.appendChild(div);
+    }
+    if (scroll || (atBottom && data.messages.length)) box.scrollTop = box.scrollHeight;
+  }
+
+  // ---------- menu (sold out switches) ----------
+  async function renderMenu() {
+    const el = document.getElementById('menu');
+    let menu;
+    try { menu = await api('GET', '/api/menu?include_unavailable=true'); } catch (e) { el.innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
+    el.innerHTML = `<p class="muted">Tap to mark items or options as sold out. Customers won't be able to order them until you switch them back on.</p>` +
+      menu.categories.map((c) => `<div class="menu-cat"><h2>${esc(c.name)}</h2>${c.items.map((i) => `
+        <div class="menu-item">
+          <div class="row"><span class="${i.available ? '' : 'soldout'}">${esc(i.name)} <span class="muted">${money(i.price_cents)}</span></span>
+            <button data-item="${i.id}" data-on="${i.available}" class="${i.available ? '' : 'primary'}">${i.available ? 'Mark sold out' : 'Back in stock'}</button></div>
+          ${i.option_groups.map((g) => `<div class="opt-row"><span class="muted">${esc(g.name)}:</span>${g.options.map((o) =>
+            `<button class="chip ${o.available ? '' : 'off'}" data-opt="${o.id}" data-on="${o.available}" title="${o.available ? 'Mark sold out' : 'Back in stock'}">${esc(o.name)}</button>`).join('')}</div>`).join('')}
+        </div>`).join('')}</div>`).join('');
+    el.querySelectorAll('[data-item]').forEach((b) => (b.onclick = async () => {
+      b.disabled = true;
+      try { await api('PATCH', `/api/admin/items/${b.dataset.item}`, { available: b.dataset.on !== 'true' }); } catch (e) { alert(e.message); }
+      renderMenu();
+    }));
+    el.querySelectorAll('[data-opt]').forEach((b) => (b.onclick = async () => {
+      b.disabled = true;
+      try { await api('PATCH', `/api/admin/options/${b.dataset.opt}`, { available: b.dataset.on !== 'true' }); } catch (e) { alert(e.message); }
+      renderMenu();
+    }));
+  }
+
+  if (key) start(); else logout();
+})();
+</script>
+</body>
+</html>

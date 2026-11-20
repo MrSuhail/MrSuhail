@@ -4,12 +4,15 @@
   "description": "REST API for a restaurant menu and online ordering",
   "main": "src/server.js",
   "type": "commonjs",
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
-    "start": "node --disable-warning=ExperimentalWarning src/server.js",
-    "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
-    "seed": "node --disable-warning=ExperimentalWarning src/seed.js",
-    "test": "node --disable-warning=ExperimentalWarning --test"
+    "start": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env src/server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env --watch src/server.js",
+    "seed": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env src/seed.js",
+    "test": "node --disable-warning=ExperimentalWarning --test",
+    "import-menu": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env src/import-menu.js"
   },
   "dependencies": {
     "express": "^5.1.0"

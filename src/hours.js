@@ -179,4 +179,4 @@ function createSchedule(db, config) {
   return { tz, weekly, status, assertAcceptingAsap, assertSchedulable, slots, localDate };
 }
 
-module.exports = { createSchedule, DAYS, TIME_RE, isValidDate, localDate, assertTimezone };
+module.exports = { createSchedule, DAYS, TIME_RE, isValidDate, localDate, addDays, assertTimezone };

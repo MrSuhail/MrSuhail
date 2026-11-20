@@ -1,0 +1,32 @@
+{
+  "categories": [
+    {
+      "name": "Smoothies",
+      "description": "Made fresh to order",
+      "items": [
+        {
+          "name": "Example Berry Smoothie",
+          "description": "Replace with your real items and prices",
+          "price": 59.90,
+          "tags": ["vegan"],
+          "options": [
+            { "name": "Size", "required": true, "choices": [{ "name": "Regular" }, { "name": "Large", "price": 10.00 }] },
+            { "name": "Boosters", "max": 2, "choices": [{ "name": "Protein", "price": 12.00 }, { "name": "Oats", "price": 6.00 }] }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Wraps",
+      "items": [
+        {
+          "name": "Example Chicken Wrap",
+          "price": 79.90,
+          "options": [
+            { "name": "Bread", "required": true, "choices": ["Wholewheat", "Plain"] }
+          ]
+        }
+      ]
+    }
+  ]
+}

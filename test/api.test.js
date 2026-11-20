@@ -24,7 +24,7 @@ before(async () => {
   base = `http://127.0.0.1:${server.address().port}`;
 });
 
-after(() => { server.close(); db.close(); });
+after(() => { server.closeAllConnections(); server.close(); db.close(); });
 
 async function call(method, path, body, { admin = false } = {}) {
   const headers = { 'content-type': 'application/json' };

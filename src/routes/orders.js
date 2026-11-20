@@ -72,14 +72,18 @@ function createOrderService(db, config) {
     });
 
     const subtotal = lines.reduce((sum, l) => sum + l.line_total_cents, 0);
-    const tax = Math.round((subtotal * config.taxRateBps) / 10000);
     const deliveryFee = type === 'delivery' ? config.deliveryFeeCents : 0;
+    // With tax-inclusive prices, tax_cents is the tax already contained in the subtotal ("of which VAT").
+    const tax = config.pricesIncludeTax
+      ? subtotal - Math.round((subtotal * 10000) / (10000 + config.taxRateBps))
+      : Math.round((subtotal * config.taxRateBps) / 10000);
     return {
       lines,
       subtotal_cents: subtotal,
       tax_cents: tax,
+      prices_include_tax: config.pricesIncludeTax,
       delivery_fee_cents: deliveryFee,
-      total_cents: subtotal + tax + deliveryFee,
+      total_cents: subtotal + (config.pricesIncludeTax ? 0 : tax) + deliveryFee,
     };
   }
 
@@ -90,10 +94,14 @@ function createOrderService(db, config) {
       .prepare('SELECT menu_item_id, name, options, unit_price_cents, quantity, notes FROM order_items WHERE order_id = ? ORDER BY id')
       .all(order.id)
       .map((l) => ({ ...l, options: JSON.parse(l.options), line_total_cents: l.unit_price_cents * l.quantity }));
-    return { ...order, items };
+    return { ...order, prices_include_tax: config.pricesIncludeTax, items };
   }
 
-  function create(body) {
+  /**
+   * Places an order. `source` records where it came from ('api' or 'whatsapp').
+   * Emits 'order:created' on config.events.
+   */
+  function create(body, { source = 'api' } = {}) {
     const data = validate(body, orderSchema);
     if (data.type === 'delivery' && !data.delivery_address) {
       throw badRequest('Validation failed', ['delivery_address is required for delivery orders']);
@@ -112,10 +120,10 @@ function createOrderService(db, config) {
     const code = newOrderCode();
     const orderId = transaction(db, () => {
       const result = db.prepare(
-        `INSERT INTO orders (code, customer_name, customer_phone, customer_email, type, delivery_address, notes,
+        `INSERT INTO orders (code, source, customer_name, customer_phone, customer_email, type, delivery_address, notes,
            scheduled_for, subtotal_cents, tax_cents, delivery_fee_cents, total_cents)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(code, data.customer_name, data.customer_phone, data.customer_email ?? null, data.type,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(code, source, data.customer_name, data.customer_phone, data.customer_email ?? null, data.type,
         data.type === 'delivery' ? data.delivery_address : null, data.notes ?? '', scheduledFor,
         quote.subtotal_cents, quote.tax_cents, quote.delivery_fee_cents, quote.total_cents);
       const id = Number(result.lastInsertRowid);
@@ -127,7 +135,9 @@ function createOrderService(db, config) {
       }
       return id;
     });
-    return load('id', orderId);
+    const order = load('id', orderId);
+    config.events?.emit('order:created', order);
+    return order;
   }
 
   function setStatus(order, next) {
@@ -138,10 +148,18 @@ function createOrderService(db, config) {
       throw conflict(`Cannot change order from "${order.status}" to "${next}"`);
     }
     db.prepare("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?").run(next, order.id);
-    return load('id', order.id);
+    const updated = load('id', order.id);
+    config.events?.emit('order:status', updated, order.status);
+    return updated;
   }
 
-  return { price, load, create, setStatus };
+  /** Most recent order for a phone number, or null. */
+  function latestForPhone(phone) {
+    const row = db.prepare('SELECT id FROM orders WHERE customer_phone = ? ORDER BY id DESC LIMIT 1').get(phone);
+    return row ? load('id', row.id) : null;
+  }
+
+  return { price, load, create, setStatus, latestForPhone, schedule };
 }
 
 /** Customer-facing order routes. Orders are looked up by their unguessable code. */
@@ -223,4 +241,4 @@ function adminOrdersRouter(db, config) {
   return router;
 }
 
-module.exports = { publicOrdersRouter, adminOrdersRouter, STATUSES, TRANSITIONS };
+module.exports = { publicOrdersRouter, adminOrdersRouter, createOrderService, STATUSES, TRANSITIONS };
