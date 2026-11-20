@@ -3,6 +3,8 @@ const express = require('express');
 const { validate, parseId } = require('../validate');
 const { transaction } = require('../db');
 const { badRequest, notFound, conflict } = require('../errors');
+const { loadOptionGroups, resolveSelectedOptions } = require('../options');
+const { createSchedule } = require('../hours');
 
 const STATUSES = ['pending', 'confirmed', 'preparing', 'ready', 'out_for_delivery', 'completed', 'cancelled'];
 
@@ -24,13 +26,15 @@ const orderSchema = {
   type: { type: 'string', required: true, enum: ['pickup', 'delivery'] },
   delivery_address: { type: 'string', maxLength: 500 },
   notes: { type: 'string', maxLength: 500 },
-  items: { type: 'array', required: true, min: 1 },
+  scheduled_for: { type: 'string', maxLength: 40 },
+  items: { type: 'array', required: true, min: 1, max: 100 },
 };
 
 const lineSchema = {
   menu_item_id: { type: 'int', required: true, min: 1 },
   quantity: { type: 'int', required: true, min: 1 },
   notes: { type: 'string', maxLength: 200 },
+  options: { type: 'array' },
 };
 
 /** Short, unguessable code customers use to look up their order. */
@@ -38,6 +42,7 @@ const newOrderCode = () => crypto.randomBytes(6).toString('base64url').toUpperCa
 
 function createOrderService(db, config) {
   const maxQty = config.maxQuantityPerItem;
+  const schedule = createSchedule(db, config);
 
   /** Validates cart lines against the live menu and computes totals. Prices come from the DB, never the client. */
   function price(items, type) {
@@ -52,13 +57,17 @@ function createOrderService(db, config) {
       const item = db.prepare('SELECT * FROM menu_items WHERE id = ?').get(line.menu_item_id);
       if (!item) throw badRequest(`items[${i}]: menu item ${line.menu_item_id} does not exist`);
       if (!item.available) throw conflict(`"${item.name}" is currently unavailable`);
+      const groups = loadOptionGroups(db, [item.id]).get(item.id) ?? [];
+      const { options, deltaCents } = resolveSelectedOptions(item, groups, line.options, `items[${i}]`);
+      const unit = Math.max(0, item.price_cents + deltaCents);
       return {
         menu_item_id: item.id,
         name: item.name,
-        unit_price_cents: item.price_cents,
+        options,
+        unit_price_cents: unit,
         quantity: line.quantity,
         notes: line.notes ?? '',
-        line_total_cents: item.price_cents * line.quantity,
+        line_total_cents: unit * line.quantity,
       };
     });
 
@@ -78,9 +87,9 @@ function createOrderService(db, config) {
     const order = db.prepare(`SELECT * FROM orders WHERE ${where} = ?`).get(value);
     if (!order) return null;
     const items = db
-      .prepare('SELECT menu_item_id, name, unit_price_cents, quantity, notes FROM order_items WHERE order_id = ? ORDER BY id')
+      .prepare('SELECT menu_item_id, name, options, unit_price_cents, quantity, notes FROM order_items WHERE order_id = ? ORDER BY id')
       .all(order.id)
-      .map((l) => ({ ...l, line_total_cents: l.unit_price_cents * l.quantity }));
+      .map((l) => ({ ...l, options: JSON.parse(l.options), line_total_cents: l.unit_price_cents * l.quantity }));
     return { ...order, items };
   }
 
@@ -94,20 +103,28 @@ function createOrderService(db, config) {
       throw badRequest(`Delivery orders require a subtotal of at least ${config.minDeliveryOrderCents} cents`);
     }
 
+    // No scheduled_for means "as soon as possible", which needs the kitchen to be open now.
+    const now = config.now();
+    let scheduledFor = null;
+    if (data.scheduled_for) scheduledFor = new Date(schedule.assertSchedulable(data.scheduled_for, now)).toISOString();
+    else schedule.assertAcceptingAsap(now);
+
     const code = newOrderCode();
     const orderId = transaction(db, () => {
       const result = db.prepare(
         `INSERT INTO orders (code, customer_name, customer_phone, customer_email, type, delivery_address, notes,
-           subtotal_cents, tax_cents, delivery_fee_cents, total_cents)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           scheduled_for, subtotal_cents, tax_cents, delivery_fee_cents, total_cents)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(code, data.customer_name, data.customer_phone, data.customer_email ?? null, data.type,
-        data.type === 'delivery' ? data.delivery_address : null, data.notes ?? '',
+        data.type === 'delivery' ? data.delivery_address : null, data.notes ?? '', scheduledFor,
         quote.subtotal_cents, quote.tax_cents, quote.delivery_fee_cents, quote.total_cents);
       const id = Number(result.lastInsertRowid);
       const insertLine = db.prepare(
-        'INSERT INTO order_items (order_id, menu_item_id, name, unit_price_cents, quantity, notes) VALUES (?, ?, ?, ?, ?, ?)'
+        'INSERT INTO order_items (order_id, menu_item_id, name, options, unit_price_cents, quantity, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'
       );
-      for (const l of quote.lines) insertLine.run(id, l.menu_item_id, l.name, l.unit_price_cents, l.quantity, l.notes);
+      for (const l of quote.lines) {
+        insertLine.run(id, l.menu_item_id, l.name, JSON.stringify(l.options), l.unit_price_cents, l.quantity, l.notes);
+      }
       return id;
     });
     return load('id', orderId);

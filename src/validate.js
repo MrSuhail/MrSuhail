@@ -41,6 +41,9 @@ function validate(body, schema, { partial = false } = {}) {
         if (rule.min !== undefined && value.length < rule.min) {
           errors.push(`${field} must contain at least ${rule.min} item(s)`); continue;
         }
+        if (rule.max !== undefined && value.length > rule.max) {
+          errors.push(`${field} must contain at most ${rule.max} item(s)`); continue;
+        }
         break;
     }
     if (rule.enum && !rule.enum.includes(value)) {

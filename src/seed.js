@@ -1,4 +1,40 @@
 const { transaction } = require('./db');
+const { replaceOptionGroups } = require('./options');
+
+const opt = (name, price_delta_cents = 0) => ({ name, price_delta_cents, available: true });
+
+/** Option groups for seeded items, keyed by item name. */
+const OPTIONS = {
+  'Classic Burger': [
+    { name: 'Cooked', min_select: 1, max_select: 1, options: [opt('Medium rare'), opt('Medium'), opt('Well done')] },
+    { name: 'Side', min_select: 1, max_select: 1, options: [opt('Fries'), opt('Side salad'), opt('Sweet potato fries', 150)] },
+    { name: 'Extras', min_select: 0, max_select: 3, options: [opt('Bacon', 200), opt('Avocado', 150), opt('Fried egg', 125), opt('Extra patty', 450)] },
+  ],
+  'Margherita Pizza': [
+    { name: 'Size', min_select: 1, max_select: 1, options: [opt('10 inch'), opt('14 inch', 400)] },
+    { name: 'Toppings', min_select: 0, max_select: 5, options: [opt('Mushrooms', 150), opt('Olives', 150), opt('Pepperoni', 200), opt('Extra mozzarella', 175)] },
+    { name: 'Crust', min_select: 0, max_select: 1, options: [opt('Gluten-free crust', 300)] },
+  ],
+  'Grilled Salmon': [
+    { name: 'Side', min_select: 1, max_select: 1, options: [opt('Seasonal vegetables'), opt('Mashed potatoes'), opt('Rice')] },
+  ],
+  'Chocolate Brownie': [
+    { name: 'Ice cream', min_select: 0, max_select: 1, options: [opt('No ice cream', -100)] },
+  ],
+  'Iced Tea': [
+    { name: 'Flavor', min_select: 1, max_select: 1, options: [opt('Classic'), opt('Peach')] },
+  ],
+  'Fresh Lemonade': [
+    { name: 'Size', min_select: 1, max_select: 1, options: [opt('Regular'), opt('Large', 150)] },
+  ],
+};
+
+// [day_of_week (0 = Sunday), open, close]
+const HOURS = [
+  [0, '12:00', '21:00'],
+  [1, '11:00', '22:00'], [2, '11:00', '22:00'], [3, '11:00', '22:00'], [4, '11:00', '22:00'],
+  [5, '11:00', '23:00'], [6, '11:00', '23:00'],
+];
 
 const MENU = [
   {
@@ -25,7 +61,7 @@ const MENU = [
   {
     name: 'Drinks', description: '', items: [
       ['Fresh Lemonade', 'House-made', 399, ['vegan']],
-      ['Iced Tea', 'Peach or classic', 349, ['vegan']],
+      ['Iced Tea', 'Brewed in-house', 349, ['vegan']],
       ['Sparkling Water', '500ml', 299, ['vegan']],
     ],
   },
@@ -39,8 +75,13 @@ function seed(db) {
     );
     MENU.forEach((cat, i) => {
       const catId = Number(insertCat.run(cat.name, cat.description, i).lastInsertRowid);
-      for (const [name, desc, price, tags] of cat.items) insertItem.run(catId, name, desc, price, JSON.stringify(tags));
+      for (const [name, desc, price, tags] of cat.items) {
+        const itemId = Number(insertItem.run(catId, name, desc, price, JSON.stringify(tags)).lastInsertRowid);
+        if (OPTIONS[name]) replaceOptionGroups(db, itemId, OPTIONS[name]);
+      }
     });
+    const insertHours = db.prepare('INSERT INTO opening_hours (day_of_week, open_time, close_time) VALUES (?, ?, ?)');
+    for (const h of HOURS) insertHours.run(...h);
   });
 }
 

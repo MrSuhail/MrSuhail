@@ -1,6 +1,8 @@
 const express = require('express');
 const { validate, parseId } = require('../validate');
 const { notFound, conflict, badRequest } = require('../errors');
+const { transaction } = require('../db');
+const { parseOptionGroups, replaceOptionGroups, loadOptionGroups, optionSchema } = require('../options');
 
 const categorySchema = {
   name: { type: 'string', required: true, maxLength: 100 },
@@ -18,7 +20,7 @@ const itemSchema = {
   image_url: { type: 'string', maxLength: 2000, nullable: true },
 };
 
-function serializeItem(row) {
+function serializeItem(row, groups = []) {
   return {
     id: row.id,
     category_id: row.category_id,
@@ -28,9 +30,16 @@ function serializeItem(row) {
     available: Boolean(row.available),
     tags: JSON.parse(row.tags),
     image_url: row.image_url,
+    option_groups: groups,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
+}
+
+/** Serializes item rows with their option groups attached. */
+function serializeItems(db, rows) {
+  const groups = loadOptionGroups(db, rows.map((r) => r.id));
+  return rows.map((r) => serializeItem(r, groups.get(r.id)));
 }
 
 function toDbFields(data) {
@@ -58,10 +67,9 @@ function publicMenuRouter(db) {
   router.get('/menu', (req, res) => {
     const includeUnavailable = req.query.include_unavailable === 'true';
     const categories = db.prepare('SELECT * FROM categories ORDER BY sort_order, name').all();
-    const items = db
+    const items = serializeItems(db, db
       .prepare(`SELECT * FROM menu_items ${includeUnavailable ? '' : 'WHERE available = 1'} ORDER BY name`)
-      .all()
-      .map(serializeItem);
+      .all());
     res.json({
       categories: categories.map((c) => ({
         id: c.id,
@@ -99,13 +107,13 @@ function publicMenuRouter(db) {
     if (req.query.available === 'true') where.push('available = 1');
     if (req.query.available === 'false') where.push('available = 0');
     const sql = `SELECT * FROM menu_items ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY name`;
-    res.json({ data: db.prepare(sql).all(...params).map(serializeItem) });
+    res.json({ data: serializeItems(db, db.prepare(sql).all(...params)) });
   });
 
   router.get('/items/:id', (req, res) => {
     const row = db.prepare('SELECT * FROM menu_items WHERE id = ?').get(parseId(req.params.id));
     if (!row) throw notFound('Menu item');
-    res.json(serializeItem(row));
+    res.json(serializeItems(db, [row])[0]);
   });
 
   return router;
@@ -117,6 +125,8 @@ function adminMenuRouter(db) {
 
   const getCategory = (id) => db.prepare('SELECT * FROM categories WHERE id = ?').get(id);
   const getItem = (id) => db.prepare('SELECT * FROM menu_items WHERE id = ?').get(id);
+  const itemView = (id) => serializeItems(db, [getItem(id)])[0];
+  const groupsFrom = (body) => (body && body.option_groups !== undefined ? parseOptionGroups(body.option_groups) : undefined);
   const assertCategory = (id) => { if (!getCategory(id)) throw badRequest(`category_id ${id} does not exist`); };
 
   const uniqueName = (fn) => {
@@ -156,25 +166,35 @@ function adminMenuRouter(db) {
 
   router.post('/items', (req, res) => {
     const data = toDbFields(validate(req.body, itemSchema));
+    const groups = groupsFrom(req.body);
     assertCategory(data.category_id);
-    const result = db.prepare(
-      `INSERT INTO menu_items (category_id, name, description, price_cents, available, tags, image_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(data.category_id, data.name, data.description ?? '', data.price_cents,
-      data.available ?? 1, data.tags ?? '[]', data.image_url ?? null);
-    res.status(201).json(serializeItem(getItem(Number(result.lastInsertRowid))));
+    const id = transaction(db, () => {
+      const result = db.prepare(
+        `INSERT INTO menu_items (category_id, name, description, price_cents, available, tags, image_url)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).run(data.category_id, data.name, data.description ?? '', data.price_cents,
+        data.available ?? 1, data.tags ?? '[]', data.image_url ?? null);
+      const newId = Number(result.lastInsertRowid);
+      if (groups) replaceOptionGroups(db, newId, groups);
+      return newId;
+    });
+    res.status(201).json(itemView(id));
   });
 
   router.patch('/items/:id', (req, res) => {
     const id = parseId(req.params.id);
     if (!getItem(id)) throw notFound('Menu item');
     const data = toDbFields(validate(req.body, itemSchema, { partial: true }));
+    const groups = groupsFrom(req.body); // when present, replaces all of the item's option groups
     if (data.category_id) assertCategory(data.category_id);
-    if (Object.keys(data).length) {
-      const { sql, params } = buildUpdate('menu_items', id, data, true);
-      db.prepare(sql).run(...params);
-    }
-    res.json(serializeItem(getItem(id)));
+    transaction(db, () => {
+      if (Object.keys(data).length) {
+        const { sql, params } = buildUpdate('menu_items', id, data, true);
+        db.prepare(sql).run(...params);
+      }
+      if (groups) replaceOptionGroups(db, id, groups);
+    });
+    res.json(itemView(id));
   });
 
   router.delete('/items/:id', (req, res) => {
@@ -182,6 +202,21 @@ function adminMenuRouter(db) {
     if (!getItem(id)) throw notFound('Menu item');
     db.prepare('DELETE FROM menu_items WHERE id = ?').run(id);
     res.status(204).end();
+  });
+
+  // Change a single option without resending the item, e.g. { "available": false } when out of avocado.
+  router.patch('/options/:id', (req, res) => {
+    const id = parseId(req.params.id);
+    const option = db.prepare('SELECT * FROM options WHERE id = ?').get(id);
+    if (!option) throw notFound('Option');
+    const data = validate(req.body, optionSchema, { partial: true });
+    if ('available' in data) data.available = data.available ? 1 : 0;
+    if (Object.keys(data).length) {
+      const { sql, params } = buildUpdate('options', id, data);
+      db.prepare(sql).run(...params);
+    }
+    const { menu_item_id: itemId } = db.prepare('SELECT menu_item_id FROM option_groups WHERE id = ?').get(option.group_id);
+    res.json(itemView(itemId));
   });
 
   return router;

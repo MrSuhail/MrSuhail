@@ -4,6 +4,7 @@ const { requireAdmin } = require('./auth');
 const { HttpError } = require('./errors');
 const { publicMenuRouter, adminMenuRouter } = require('./routes/menu');
 const { publicOrdersRouter, adminOrdersRouter } = require('./routes/orders');
+const { publicHoursRouter, adminHoursRouter } = require('./routes/hours');
 
 function createApp(db, overrides = {}) {
   const config = { ...defaultConfig, ...overrides };
@@ -16,11 +17,13 @@ function createApp(db, overrides = {}) {
 
   app.use('/api', publicMenuRouter(db));
   app.use('/api', publicOrdersRouter(db, config));
+  app.use('/api', publicHoursRouter(db, config));
 
   const admin = express.Router();
   admin.use(requireAdmin(config.adminApiKey));
   admin.use(adminMenuRouter(db));
   admin.use(adminOrdersRouter(db, config));
+  admin.use(adminHoursRouter(db, config));
   app.use('/api/admin', admin);
 
   app.use((_req, _res, next) => next(new HttpError(404, 'Route not found')));
