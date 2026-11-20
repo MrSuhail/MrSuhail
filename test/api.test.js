@@ -7,7 +7,7 @@ const { seed } = require('../src/seed');
 const ADMIN = 'test-key';
 let server, base, db;
 
-// Tests run on a fixed clock in UTC. Seeded hours: Mon–Thu 11:00–22:00, Fri–Sat 11:00–23:00, Sun 12:00–21:00.
+// Tests run on a fixed clock in UTC. Seeded hours: Mon–Fri 07:30–18:30, Sat 08:00–17:00, Sun 09:00–15:00.
 const WED_1PM = Date.parse('2026-11-25T13:00:00Z');
 let clock = WED_1PM;
 const at = (iso) => { clock = Date.parse(iso); };
@@ -272,15 +272,15 @@ test('GET /api/hours shows the schedule and whether we are open', async () => {
   const { body } = await call('GET', '/api/hours');
   assert.equal(body.timezone, 'UTC');
   assert.equal(body.weekly.length, 7);
-  assert.deepEqual(body.weekly.find((d) => d.day === 'wednesday'), { day: 'wednesday', open: '11:00', close: '22:00' });
+  assert.deepEqual(body.weekly.find((d) => d.day === 'wednesday'), { day: 'wednesday', open: '07:30', close: '18:30' });
   assert.equal(body.open_now, true);
   assert.equal(body.accepting_asap_orders, true);
-  assert.equal(body.closes_at, '2026-11-25T22:00:00.000Z');
+  assert.equal(body.closes_at, '2026-11-25T18:30:00.000Z');
 
   at('2026-11-25T23:30:00Z'); // after close
   const closed = (await call('GET', '/api/hours')).body;
   assert.equal(closed.open_now, false);
-  assert.equal(closed.next_opens_at, '2026-11-26T11:00:00.000Z');
+  assert.equal(closed.next_opens_at, '2026-11-26T07:30:00.000Z');
   at('2026-11-25T13:00:00Z');
 });
 
@@ -288,17 +288,17 @@ test('ASAP orders are refused when closed or past the cut-off', async () => {
   const bread = await itemByName('Garlic Bread');
   const place = (extra = {}) => call('POST', '/api/orders', { ...pickupOrder([{ menu_item_id: bread.id, quantity: 1 }]), ...extra });
 
-  at('2026-11-25T08:00:00Z'); // before opening
+  at('2026-11-25T06:00:00Z'); // before opening
   const early = await place();
   assert.equal(early.status, 409);
-  assert.match(early.body.error, /closed right now.*2026-11-25T11:00:00.000Z/);
+  assert.match(early.body.error, /closed right now.*2026-11-25T07:30:00.000Z/);
 
-  at('2026-11-25T21:50:00Z'); // open, but within 15 min of closing
+  at('2026-11-25T18:20:00Z'); // open, but within 15 min of closing
   const late = await place();
   assert.equal(late.status, 409);
   assert.match(late.body.error, /stopped taking orders/);
 
-  at('2026-11-25T21:44:00Z');
+  at('2026-11-25T18:14:00Z');
   assert.equal((await place()).status, 201);
   at('2026-11-25T13:00:00Z');
 });
@@ -313,8 +313,8 @@ test('orders can be scheduled for later, within opening hours', async () => {
   assert.equal(ok.status, 201);
   assert.equal(ok.body.scheduled_for, '2026-11-26T12:30:00.000Z');
 
-  assert.equal((await place('2026-11-26T08:00:00Z')).status, 409); // before opening
-  assert.equal((await place('2026-11-26T11:10:00Z')).status, 409); // less than prep time after opening
+  assert.equal((await place('2026-11-26T06:00:00Z')).status, 409); // before opening
+  assert.equal((await place('2026-11-26T07:40:00Z')).status, 409); // less than prep time after opening
   assert.equal((await place('2026-11-25T23:40:00Z')).status, 409); // too soon / closed
   assert.equal((await place('2026-12-10T12:00:00Z')).status, 409); // too far ahead
   assert.equal((await place('tomorrow at noon')).status, 400);
@@ -327,11 +327,11 @@ test('slots respect prep time, closing time and closures', async () => {
   const today = (await call('GET', '/api/hours/slots')).body;
   assert.equal(today.date, '2026-11-25');
   assert.equal(today.slots[0], '2026-11-25T13:30:00.000Z'); // 13:02 + 20 min prep, rounded up to :30
-  assert.equal(today.slots.at(-1), '2026-11-25T22:00:00.000Z');
+  assert.equal(today.slots.at(-1), '2026-11-25T18:30:00.000Z');
 
   const sunday = (await call('GET', '/api/hours/slots?date=2026-11-29')).body;
-  assert.equal(sunday.slots[0], '2026-11-29T12:30:00.000Z'); // opens 12:00 + 20 min prep = 12:20, rounded up to 12:30
-  assert.equal(sunday.slots.at(-1), '2026-11-29T21:00:00.000Z');
+  assert.equal(sunday.slots[0], '2026-11-29T09:30:00.000Z'); // opens 09:00 + 20 min prep = 09:20, rounded up to 09:30
+  assert.equal(sunday.slots.at(-1), '2026-11-29T15:00:00.000Z');
 
   assert.equal((await call('GET', '/api/hours/slots?date=2026-02-30')).status, 400);
 

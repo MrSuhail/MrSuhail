@@ -9,7 +9,7 @@ const ADMIN = 'test-key';
 const SECRET = 'app-secret';
 const PHONE = '27821234567';
 let server, base, db, app;
-let clock = Date.parse('2026-11-25T13:00:00Z'); // Wednesday 1pm (UTC; seeded hours Mon–Thu 11:00–22:00)
+let clock = Date.parse('2026-11-25T13:00:00Z'); // Wednesday 1pm (UTC; seeded hours Mon–Fri 07:30–18:30)
 
 // Fake WhatsApp API: records everything the bot sends.
 let sent = [];
@@ -98,7 +98,7 @@ test('a customer can order over WhatsApp from greeting to confirmation', async (
   let m = last();
   assert.equal(m.to, PHONE);
   assert.match(bodyText(m), /Hi Thandi! .*Test Store/s);
-  assert.match(bodyText(m), /open until 22:00/);
+  assert.match(bodyText(m), /open until 18:30/);
   assert.deepEqual(choices(m).map((c) => c.id), ['order', 'status', 'staff']);
 
   await tap('order');
@@ -176,9 +176,9 @@ test('a customer can order over WhatsApp from greeting to confirmation', async (
 
 test('when closed, customers can order ahead for a time slot', async () => {
   const phone = '27830000002';
-  clock = Date.parse('2026-11-25T23:00:00Z'); // closed
+  clock = Date.parse('2026-11-25T20:00:00Z'); // closed
   await say('hello', phone);
-  assert.match(bodyText(last()), /closed right now.*Tomorrow 11:00/s);
+  assert.match(bodyText(last()), /closed right now.*Tomorrow 07:30/s);
 
   await tap('order', phone);
   await tap(idFor(last(), 'Drinks'), phone);
@@ -189,14 +189,14 @@ test('when closed, customers can order ahead for a time slot', async () => {
 
   const m = last(); // no ASAP option, goes straight to slots
   assert.equal(m.interactive.type, 'list');
-  assert.equal(choices(m)[0].title, 'Tomorrow 11:30'); // 11:00 opening + 20 min prep → 11:30
+  assert.equal(choices(m)[0].title, 'Tomorrow 08:00'); // 07:30 opening + 20 min prep = 07:50 → 08:00
   assert.equal(choices(m).at(-1).title, 'More…');
   await tap(choices(m)[1].id, phone);
-  assert.match(bodyText(last()), /🕒 Tomorrow 11:45/);
+  assert.match(bodyText(last()), /🕒 Tomorrow 08:15/);
   await tap('place', phone);
 
   const order = db.prepare('SELECT * FROM orders WHERE customer_phone = ?').get(`+${phone}`);
-  assert.equal(order.scheduled_for, '2026-11-26T11:45:00.000Z');
+  assert.equal(order.scheduled_for, '2026-11-26T08:15:00.000Z');
 });
 
 test('customers can edit their cart and cancel a pending order', async () => {

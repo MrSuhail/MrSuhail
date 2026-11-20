@@ -22,7 +22,7 @@ npm test
 
 `.env.example` is already set up for a South African store: Johannesburg time, rands, and 15% VAT included in menu prices.
 
-On first start the database (`restaurant.db`) gets a sample menu, with options, and sample opening hours. Set `TIMEZONE` to where the restaurant is, or the hours will be read in the server's time zone.
+On first start the database (`restaurant.db`) gets a sample menu, with options, and the store's trading hours (Mon–Fri 07:30–18:30, Sat 08:00–17:00, Sun 09:00–15:00). Set `TIMEZONE` to where the restaurant is, or the hours will be read in the server's time zone.
 
 Databases from the earlier version are upgraded automatically on start. They have no opening hours, so they stay open around the clock until you set some.
 
